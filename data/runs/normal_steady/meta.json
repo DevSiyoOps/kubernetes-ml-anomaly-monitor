@@ -1,0 +1,35 @@
+{
+  "run": "normal_steady",
+  "scenario": "normal_steady",
+  "description": "constant background traffic",
+  "start": 1793295112,
+  "end": 1793295472,
+  "duration_s": 360,
+  "scale": 0.4,
+  "clock": "docker VM (same as Prometheus)",
+  "clock_offset_s": 0.019,
+  "settled_before_start": true,
+  "hpa": {
+    "minReplicas": 1,
+    "maxReplicas": 10,
+    "metrics": [
+      {
+        "resource": {
+          "name": "cpu",
+          "target": {
+            "averageUtilization": 50,
+            "type": "Utilization"
+          }
+        },
+        "type": "Resource"
+      }
+    ],
+    "behavior": null
+  },
+  "app_image": "hpa-app:v3",
+  "load_image": "busybox:1.28",
+  "target_url": "http://hpa-app/work",
+  "synthetic": false,
+  "complete": true,
+  "created_local": "2026-10-29 10:31:05 PDT"
+}

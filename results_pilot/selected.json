@@ -1,0 +1,27 @@
+{
+  "features": "B_extended",
+  "feature_list": [
+    "replicas",
+    "cpu_utilization",
+    "request_rate",
+    "cpu_per_request",
+    "latency_p95_s",
+    "replica_changes_5m",
+    "cpu_std_5m"
+  ],
+  "contamination": 0.2,
+  "grace_s": 60,
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "data": "data/dataset.csv",
+  "synthetic": false,
+  "cpu_threshold": 15.70558862795169,
+  "z_window": 8,
+  "z_k": 2.25,
+  "chosen_on": "2026-10-29 10:49"
+}

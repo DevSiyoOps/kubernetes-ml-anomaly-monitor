@@ -1,0 +1,35 @@
+{
+  "run": "attack_flood",
+  "scenario": "attack_flood",
+  "description": "background plus two 3 min request floods",
+  "start": 1793295645,
+  "end": 1793296125,
+  "duration_s": 480,
+  "scale": 0.4,
+  "clock": "docker VM (same as Prometheus)",
+  "clock_offset_s": 0.025,
+  "settled_before_start": false,
+  "hpa": {
+    "minReplicas": 1,
+    "maxReplicas": 10,
+    "metrics": [
+      {
+        "resource": {
+          "name": "cpu",
+          "target": {
+            "averageUtilization": 50,
+            "type": "Utilization"
+          }
+        },
+        "type": "Resource"
+      }
+    ],
+    "behavior": null
+  },
+  "app_image": "hpa-app:v3",
+  "load_image": "busybox:1.28",
+  "target_url": "http://hpa-app/work",
+  "synthetic": false,
+  "complete": true,
+  "created_local": "2026-10-29 10:39:54 PDT"
+}
