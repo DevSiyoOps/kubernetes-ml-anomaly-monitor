@@ -33,13 +33,11 @@ Chosen: **0.2**. Plot: `contamination_sweep.png`.
 
 Confusion matrices, ROC and precision-recall curves on validation (Isolation Forest seed 0): `validation_confusion_matrix.png`, `validation_roc_curve.png`, `validation_pr_curve.png`.
 
-## Detectors on validation (each tuned on these runs)
+## Model on validation
 
 | detector | precision | recall | F1 | FPR | ROC AUC | avg precision | episodes found | mean latency s |
 |---|---|---|---|---|---|---|---|---|
 | Isolation Forest (B_extended, c=0.2) | 0.479 | 0.520 | 0.493 | 0.267 | 0.667 | 0.551 | 1.4/2 | 16 |
-| CPU threshold (> 15.7%) | 1.000 | 0.900 | 0.947 | 0.000 | 0.967 | 0.967 | 2.0/2 | 9 |
-| rolling z-score (window 8, k=2.25) | 1.000 | 0.700 | 0.824 | 0.000 | 0.893 | 0.891 | 2.0/2 | 24 |
 
 
 ## Per workload (each validation run)
@@ -49,8 +47,6 @@ FPR on a normal run = share of its rows flagged by mistake. Recall and episodes 
 | run | detector | FPR | recall | episodes found | mean latency s |
 |---|---|---|---|---|---|
 | attack_flood | Isolation Forest | 0.267 | 0.520 | 1.4/2 | 16 |
-| attack_flood | CPU threshold | 0.000 | 0.900 | 2.0/2 | 9 |
-| attack_flood | z-score | 0.000 | 0.700 | 2.0/2 | 24 |
 
 
 ## Feature ablation (validation, each set with its own best contamination)

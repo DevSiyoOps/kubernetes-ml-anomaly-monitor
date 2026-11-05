@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Train, tune and evaluate the Isolation Forest against two baselines, following the course
+"""Train, tune and evaluate the Isolation Forest, following the course
 pipeline: split -> fit preprocessing on train only -> train -> tune on validation -> finalize ->
 evaluate once on test.
 
@@ -13,7 +13,7 @@ Steps
   3  train on normal rows of the train runs only; the scaler is fitted on those rows only
   4  contamination sweep on validation (contamination = share of NORMAL training rows that the
      model is allowed to flag, because the training data has no attacks)
-  5  tune the baselines on the same validation runs; feature-set ablation; plots; report
+  5  feature-set ablation on the same validation runs; plots; report
   6  (--final) refit with the chosen settings on train + the normal validation runs
   7  (--final) score the test runs once, write the metrics, save the model
 
@@ -24,7 +24,7 @@ because the autoscaler is still recovering from the attack then. The Isolation F
 its numbers are the mean (and std) over 5 seeds.
 
 Outputs in --out (default results/): report.md, selected.json, contamination_sweep.csv/.png,
-baselines.csv, ablation.csv, timeline_<run>.png, and after --final: test_metrics.csv,
+validation_metrics.csv, ablation.csv, timeline_<run>.png, and after --final: test_metrics.csv,
 final_report.md, test_log.csv, and data/isolation_forest_v2.joblib. Both steps also save
 <split>_confusion_matrix.png, <split>_roc_curve.png and <split>_pr_curve.png (lecture slides 9-12).
 """
@@ -62,8 +62,6 @@ FEATURE_SETS = {
 DEFAULT_FEATURES = "B_extended"
 CONTAMINATIONS = [0.005, 0.01, 0.02, 0.03, 0.05, 0.075, 0.1, 0.15, 0.2]
 SEEDS = [0, 1, 2, 3, 4]
-Z_WINDOWS = [8, 20, 40]                  # rows (2, 5, 10 minutes at 15 s)
-Z_KS = np.round(np.arange(1.5, 8.01, 0.25), 2)
 MODEL_PATH = os.path.join("data", "isolation_forest_v2.joblib")
 
 # chart colours (categorical slots 1-4 of the default validated palette)
@@ -173,42 +171,6 @@ def iforest_outputs(model, X):
     return model.predict(X) == -1, -model.score_samples(X)
 
 
-def zscore(df, window):
-    """Largest upward z-score of CPU and request rate vs the previous `window` rows of the same run."""
-    out = np.zeros(len(df))
-    for _, g in df.groupby("run"):
-        zs = []
-        for c in ["cpu_utilization", "request_rate"]:
-            x = g[c]
-            prev = x.shift(1).rolling(window, min_periods=4)
-            sd = np.maximum(prev.std(), 0.05 * prev.mean().abs() + 0.5)  # floor: steady signals
-            zs.append(((x - prev.mean()) / sd).fillna(0))
-        out[g.index.to_numpy()] = np.maximum(*zs)
-    return out
-
-
-def tune_threshold(df, score, keep, candidates):
-    best = None
-    for t in candidates:
-        m = evaluate_flags(df, score > t, score, keep)
-        if best is None or (m["f1"], -m["fpr"]) > (best[1]["f1"], -best[1]["fpr"]):
-            best = (float(t), m)
-    return best
-
-
-def tune_baselines(val, keep):
-    cpu = val["cpu_utilization"].to_numpy()
-    cands = np.unique(np.quantile(cpu, np.linspace(0.3, 0.999, 300)))
-    t_cpu, m_cpu = tune_threshold(val, cpu, keep, cands)
-    best_z = None
-    for w in Z_WINDOWS:
-        z = zscore(val, w)
-        k, m = tune_threshold(val, z, keep, Z_KS)
-        if best_z is None or (m["f1"], -m["fpr"]) > (best_z[2]["f1"], -best_z[2]["fpr"]):
-            best_z = (w, k, m)
-    return {"cpu_threshold": t_cpu, "z_window": best_z[0], "z_k": best_z[1]}, m_cpu, best_z[2]
-
-
 def sweep(train_X, val, val_X, keep):
     rows = []
     for c in CONTAMINATIONS:
@@ -264,7 +226,7 @@ def plot_eval_figs(df, keep, dets, prefix, out_dir, synthetic):
     tag = "  [SYNTHETIC]" if synthetic else ""
     split = prefix.rstrip("_")
 
-    fig, axes = plt.subplots(1, len(dets), figsize=(3.6 * len(dets), 3.4))
+    fig, axes = plt.subplots(1, len(dets), figsize=(max(3.6 * len(dets), 5.5), 3.4))
     for ax, (name, flag, _, _) in zip(np.atleast_1d(axes), dets):
         f = np.asarray(flag, dtype=bool)[keep]
         # same layout as the lecture: rows = actual (attack, normal), columns = predicted (attack, normal)
@@ -437,13 +399,10 @@ def tuning(args):
                f"Isolation Forest on validation ({args.features}), mean of {len(SEEDS)} seeds"
                + ("  [SYNTHETIC]" if synthetic else ""))
 
-    print("step 5: baselines and feature ablation")
-    params, m_cpu, m_z = tune_baselines(val, keep)
+    print("step 5: feature ablation")
     if_val = sw[sw["contamination"] == chosen].iloc[0].to_dict()
-    base_rows = [dict(detector=f"Isolation Forest ({args.features}, c={chosen:g})", **if_val),
-                 dict(detector=f"CPU threshold (> {params['cpu_threshold']:.1f}%)", **m_cpu),
-                 dict(detector=f"rolling z-score (window {params['z_window']}, k={params['z_k']})", **m_z)]
-    pd.DataFrame(base_rows).to_csv(os.path.join(args.out, "baselines.csv"), index=False)
+    val_rows = [dict(detector=f"Isolation Forest ({args.features}, c={chosen:g})", **if_val)]
+    pd.DataFrame(val_rows).to_csv(os.path.join(args.out, "validation_metrics.csv"), index=False)
 
     abl = []
     for name, cols in FEATURE_SETS.items():
@@ -459,23 +418,16 @@ def tuning(args):
 
     if_outs = [iforest_outputs(fit_iforest(tr[feats], chosen, s), val[feats]) for s in SEEDS]
     f_if = if_outs[0][0]
-    z = zscore(val, params["z_window"])
-    cpu_v = val["cpu_utilization"].to_numpy()
-    run_rows = per_run(val, keep, [("Isolation Forest", if_outs), ("CPU threshold", [(cpu_v > params["cpu_threshold"], cpu_v)]),
-                                   ("z-score", [(z > params["z_k"], z)])])
+    run_rows = per_run(val, keep, [("Isolation Forest", if_outs)])
     pd.DataFrame(run_rows).to_csv(os.path.join(args.out, "per_run_validation.csv"), index=False)
-    plot_eval_figs(val, keep, [("Isolation Forest", f_if, if_outs[0][1], C_IF),
-                               ("CPU threshold", cpu_v > params["cpu_threshold"], cpu_v, C_CPU),
-                               ("z-score", z > params["z_k"], z, C_Z)], "validation_", args.out, synthetic)
+    plot_eval_figs(val, keep, [("Isolation Forest", f_if, if_outs[0][1], C_IF)], "validation_", args.out, synthetic)
     for run_name, run in val.groupby("run"):
         idx = run.index.to_numpy()
-        plot_timeline(run, [("Isolation Forest", f_if[idx], C_IF),
-                            ("CPU threshold", val["cpu_utilization"].to_numpy()[idx] > params["cpu_threshold"], C_CPU),
-                            ("z-score", z[idx] > params["z_k"], C_Z)],
+        plot_timeline(run, [("Isolation Forest", f_if[idx], C_IF)],
                       os.path.join(args.out, f"timeline_{run_name}.png"), synthetic)
 
     selected = dict(features=args.features, feature_list=feats, contamination=chosen, grace_s=args.grace,
-                    seeds=SEEDS, data=args.data, synthetic=synthetic, **params,
+                    seeds=SEEDS, data=args.data, synthetic=synthetic,
                     chosen_on=time.strftime("%Y-%m-%d %H:%M"))
     with open(os.path.join(args.out, "selected.json"), "w") as f:
         json.dump(selected, f, indent=2)
@@ -496,8 +448,8 @@ def tuning(args):
             f"\nChosen: **{chosen:g}**. Plot: `contamination_sweep.png`.\n",
             "Confusion matrices, ROC and precision-recall curves on validation (Isolation Forest seed 0): "
             "`validation_confusion_matrix.png`, `validation_roc_curve.png`, `validation_pr_curve.png`.\n",
-            "## Detectors on validation (each tuned on these runs)\n",
-            table(base_rows, [("detector", lambda r: r["detector"])] + METRIC_COLS),
+            "## Model on validation\n",
+            table(val_rows, [("detector", lambda r: r["detector"])] + METRIC_COLS),
             "\n## Per workload (each validation run)\n",
             "FPR on a normal run = share of its rows flagged by mistake. Recall and episodes only apply to attack runs.\n",
             table(run_rows, RUN_COLS),
@@ -511,8 +463,7 @@ def tuning(args):
             "\nNext: when these choices are final, run `python3 evaluate.py --final` once.\n"]
     with open(os.path.join(args.out, "report.md"), "w") as f:
         f.write("\n".join(rep))
-    print(f"chosen contamination {chosen:g}; validation F1 IF {if_val['f1']:.3f}, "
-          f"CPU threshold {m_cpu['f1']:.3f}, z-score {m_z['f1']:.3f}")
+    print(f"chosen contamination {chosen:g}; validation F1 {if_val['f1']:.3f}")
     print(f"wrote {args.out}/report.md (and csv/png files)")
 
 
@@ -546,12 +497,7 @@ def final(args):
         models.append(m)
         per_seed.append(evaluate_flags(test, *iforest_outputs(m, test[feats]), keep))
     if_mean, if_std = mean_std(per_seed)
-    cpu = test["cpu_utilization"].to_numpy()
-    z = zscore(test, sel["z_window"])
-    m_cpu = evaluate_flags(test, cpu > sel["cpu_threshold"], cpu, keep)
-    m_z = evaluate_flags(test, z > sel["z_k"], z, keep)
-    rows = [dict(detector="Isolation Forest", **if_mean), dict(detector="CPU threshold", **m_cpu),
-            dict(detector="rolling z-score", **m_z)]
+    rows = [dict(detector="Isolation Forest", **if_mean)]
     pd.DataFrame(rows).to_csv(os.path.join(args.out, "test_metrics.csv"), index=False)
 
     by_kind = []
@@ -561,24 +507,15 @@ def final(args):
         ks = keep[sub_idx]
         res = [evaluate_flags(sub, *iforest_outputs(mm, sub[feats]), ks) for mm in models]
         by_kind.append(dict(detector=f"Isolation Forest, {kind} only", **mean_std(res)[0]))
-        by_kind.append(dict(detector=f"CPU threshold, {kind} only",
-                            **evaluate_flags(sub, sub["cpu_utilization"] > sel["cpu_threshold"],
-                                             sub["cpu_utilization"], ks)))
-        zz = z[sub_idx]
-        by_kind.append(dict(detector=f"z-score, {kind} only", **evaluate_flags(sub, zz > sel["z_k"], zz, ks)))
 
     if_outs = [iforest_outputs(mm, test[feats]) for mm in models]
     f_if = if_outs[0][0]
-    run_rows = per_run(test, keep, [("Isolation Forest", if_outs), ("CPU threshold", [(cpu > sel["cpu_threshold"], cpu)]),
-                                    ("z-score", [(z > sel["z_k"], z)])])
+    run_rows = per_run(test, keep, [("Isolation Forest", if_outs)])
     pd.DataFrame(run_rows).to_csv(os.path.join(args.out, "per_run_test.csv"), index=False)
-    plot_eval_figs(test, keep, [("Isolation Forest", f_if, if_outs[0][1], C_IF),
-                                ("CPU threshold", cpu > sel["cpu_threshold"], cpu, C_CPU),
-                                ("z-score", z > sel["z_k"], z, C_Z)], "test_", args.out, synthetic)
+    plot_eval_figs(test, keep, [("Isolation Forest", f_if, if_outs[0][1], C_IF)], "test_", args.out, synthetic)
     for run_name, run in test.groupby("run"):
         idx = run.index.to_numpy()
-        plot_timeline(run, [("Isolation Forest", f_if[idx], C_IF), ("CPU threshold", cpu[idx] > sel["cpu_threshold"], C_CPU),
-                            ("z-score", z[idx] > sel["z_k"], C_Z)],
+        plot_timeline(run, [("Isolation Forest", f_if[idx], C_IF)],
                       os.path.join(args.out, f"test_timeline_{run_name}.png"), synthetic)
 
     if not synthetic:
@@ -594,9 +531,7 @@ def final(args):
     if synthetic:
         rep.append("> **SYNTHETIC practice data from simulate_runs.py. These numbers are not results.**\n")
     rep += [f"Settings fixed on validation ({sel['chosen_on']}): features {sel['features']} "
-            f"({', '.join(feats)}), contamination {sel['contamination']:g}, CPU threshold "
-            f"{sel['cpu_threshold']:.1f}%, z-score window {sel['z_window']} rows, k={sel['z_k']}, "
-            f"grace {sel['grace_s']:.0f} s.\n",
+            f"({', '.join(feats)}), contamination {sel['contamination']:g}, grace {sel['grace_s']:.0f} s.\n",
             f"Isolation Forest refitted on {len(fit_rows)} normal rows: {', '.join(sorted(fit_rows['run'].unique()))}.\n",
             "## Test split\n", data_summary(df[df["split"] == "test"]),
             "\n## All test runs\n", table(rows, [("detector", lambda r: r["detector"])] + METRIC_COLS),
@@ -613,9 +548,10 @@ def final(args):
     with open(os.path.join(args.out, "final_report.md"), "w") as f:
         f.write("\n".join(rep))
     log = pd.DataFrame([dict(when=time.strftime("%Y-%m-%d %H:%M:%S"), data=args.data, features=sel["features"],
-                             contamination=sel["contamination"], f1_iforest=if_mean["f1"],
-                             f1_cpu=m_cpu["f1"], f1_z=m_z["f1"])])
-    log.to_csv(log_path, mode="a", header=not os.path.exists(log_path), index=False)
+                             contamination=sel["contamination"], f1_iforest=if_mean["f1"])])
+    if os.path.exists(log_path):
+        log = pd.concat([pd.read_csv(log_path), log], ignore_index=True)
+    log.to_csv(log_path, index=False)
     for r in rows:
         print(f"  {r['detector']:<18} precision {r['precision']:.3f}  recall {r['recall']:.3f}  "
               f"F1 {r['f1']:.3f}  FPR {r['fpr']:.3f}  episodes {r['episodes_detected']:.1f}/{r['episodes']:.0f}")

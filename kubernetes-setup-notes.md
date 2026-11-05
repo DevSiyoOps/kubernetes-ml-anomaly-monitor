@@ -279,7 +279,7 @@ runs are skipped, the interrupted one starts over.
 python3 evaluate.py
 ```
 
-Read `results/report.md` (contamination sweep, baselines, feature ablation) and the plots. When
+Read `results/report.md` (contamination sweep, feature ablation) and the plots. When
 the choices are final, run the test evaluation ONCE:
 
 ```bash

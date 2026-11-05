@@ -38,13 +38,11 @@ Chosen: **0.03**. Plot: `contamination_sweep.png`.
 
 Confusion matrices, ROC and precision-recall curves on validation (Isolation Forest seed 0): `validation_confusion_matrix.png`, `validation_roc_curve.png`, `validation_pr_curve.png`.
 
-## Detectors on validation (each tuned on these runs)
+## Model on validation
 
 | detector | precision | recall | F1 | FPR | ROC AUC | avg precision | episodes found | mean latency s |
 |---|---|---|---|---|---|---|---|---|
 | Isolation Forest (B_extended, c=0.03) | 0.846 | 0.917 | 0.880 | 0.031 | 0.912 | 0.715 | 2.0/2 | 15 |
-| CPU threshold (> 34.5%) | 1.000 | 0.917 | 0.957 | 0.000 | 0.963 | 0.941 | 2.0/2 | 15 |
-| rolling z-score (window 20, k=2.0) | 0.684 | 0.542 | 0.605 | 0.046 | 0.890 | 0.707 | 2.0/2 | 22 |
 
 
 ## Per workload (each validation run)
@@ -54,11 +52,7 @@ FPR on a normal run = share of its rows flagged by mistake. Recall and episodes 
 | run | detector | FPR | recall | episodes found | mean latency s |
 |---|---|---|---|---|---|
 | attack_flood_full | Isolation Forest | 0.041 | 0.917 | 2.0/2 | 15 |
-| attack_flood_full | CPU threshold | 0.000 | 0.917 | 2.0/2 | 15 |
-| attack_flood_full | z-score | 0.000 | 0.542 | 2.0/2 | 22 |
 | normal_wave_full | Isolation Forest | 0.025 | n/a | - | n/a |
-| normal_wave_full | CPU threshold | 0.000 | n/a | - | n/a |
-| normal_wave_full | z-score | 0.074 | n/a | - | n/a |
 
 
 ## Feature ablation (validation, each set with its own best contamination)
