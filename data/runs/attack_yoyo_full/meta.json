@@ -1,0 +1,35 @@
+{
+  "run": "attack_yoyo_full",
+  "scenario": "attack_yoyo",
+  "description": "background plus a 12 min on/off yo-yo attack",
+  "start": 1793847340,
+  "end": 1793848360,
+  "duration_s": 1020,
+  "scale": 1.0,
+  "clock": "docker VM (same as Prometheus)",
+  "clock_offset_s": 0.016,
+  "settled_before_start": true,
+  "hpa": {
+    "minReplicas": 1,
+    "maxReplicas": 10,
+    "metrics": [
+      {
+        "resource": {
+          "name": "cpu",
+          "target": {
+            "averageUtilization": 50,
+            "type": "Utilization"
+          }
+        },
+        "type": "Resource"
+      }
+    ],
+    "behavior": null
+  },
+  "app_image": "hpa-app:v3",
+  "load_image": "busybox:1.28",
+  "target_url": "http://hpa-app/work",
+  "synthetic": false,
+  "complete": true,
+  "created_local": "2026-11-04 19:54:45 MST"
+}

@@ -1,0 +1,5 @@
+phase,kind,label,event_id,start,end,workers,ms,sleep,est_rps
+baseline,steady,normal,,1793842823,1793843663,2,40,0.5,3.64
+benign_burst1,benign_burst,normal,,1793843003,1793843048,4,40,0.2,16.0
+benign_burst2,benign_burst,normal,,1793843243,1793843288,4,40,0.2,16.0
+benign_burst3,benign_burst,normal,,1793843483,1793843528,4,40,0.2,16.0

@@ -1,0 +1,35 @@
+{
+  "run": "normal_bursts_full",
+  "scenario": "normal_bursts",
+  "description": "background plus three 45 s benign bursts (labelled normal)",
+  "start": 1793842823,
+  "end": 1793843663,
+  "duration_s": 840,
+  "scale": 1.0,
+  "clock": "docker VM (same as Prometheus)",
+  "clock_offset_s": 0.015,
+  "settled_before_start": true,
+  "hpa": {
+    "minReplicas": 1,
+    "maxReplicas": 10,
+    "metrics": [
+      {
+        "resource": {
+          "name": "cpu",
+          "target": {
+            "averageUtilization": 50,
+            "type": "Utilization"
+          }
+        },
+        "type": "Resource"
+      }
+    ],
+    "behavior": null
+  },
+  "app_image": "hpa-app:v3",
+  "load_image": "busybox:1.28",
+  "target_url": "http://hpa-app/work",
+  "synthetic": false,
+  "complete": true,
+  "created_local": "2026-11-04 18:39:30 MST"
+}

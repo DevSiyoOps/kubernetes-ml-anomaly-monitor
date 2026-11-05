@@ -1,0 +1,2 @@
+when,data,features,contamination,f1_iforest,f1_cpu,f1_z
+2026-11-04 22:32:28,data/dataset.csv,B_extended,0.03,0.7764236732259989,0.7874015748031495,0.3956043956043956
