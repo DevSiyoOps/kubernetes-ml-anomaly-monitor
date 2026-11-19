@@ -8,7 +8,7 @@ evaluate once on test.
   python3 evaluate.py --data data/dataset_sim.csv --out results_sim    # practice on synthetic data
 
 Steps
-  1  load data/dataset.csv, keep rows inside the runs, add the derived features
+  1  load 2_model_input/dataset.csv, keep rows inside the runs, add the derived features
   2  split by whole run (by scenario, see SPLIT): no run is in two sets
   3  train on normal rows of the train runs only; the scaler is fitted on those rows only
   4  contamination sweep on validation (contamination = share of NORMAL training rows that the
@@ -23,9 +23,9 @@ alarm minus attack start). Normal rows in the --grace seconds after an attack en
 because the autoscaler is still recovering from the attack then. The Isolation Forest is random, so
 its numbers are the mean (and std) over 5 seeds.
 
-Outputs in --out (default results/): report.md, selected.json, contamination_sweep.csv/.png,
+Outputs in --out (default 3_model_output/): report.md, selected.json, contamination_sweep.csv/.png,
 validation_metrics.csv, ablation.csv, timeline_<run>.png, and after --final: test_metrics.csv,
-final_report.md, test_log.csv, and data/isolation_forest_v2.joblib. Both steps also save
+final_report.md, test_log.csv, and model/isolation_forest.joblib. Both steps also save
 <split>_confusion_matrix.png, <split>_roc_curve.png and <split>_pr_curve.png (lecture slides 9-12).
 """
 import argparse
@@ -46,6 +46,8 @@ from sklearn.metrics import average_precision_score, precision_recall_curve, roc
 from sklearn.pipeline import make_pipeline  # noqa: E402
 from sklearn.preprocessing import StandardScaler  # noqa: E402
 
+# where a run set lives; the finished 2.5-hour set is in 2.5_hour_run_results/
+RESULTS_ROOT = os.getenv("RESULTS_ROOT", "7.5_hour_run_results")
 SPLIT = {
     "train": ["normal_steady", "normal_ramp"],
     "validation": ["normal_wave", "attack_flood"],
@@ -62,7 +64,7 @@ FEATURE_SETS = {
 DEFAULT_FEATURES = "B_extended"
 CONTAMINATIONS = [0.005, 0.01, 0.02, 0.03, 0.05, 0.075, 0.1, 0.15, 0.2]
 SEEDS = [0, 1, 2, 3, 4]
-MODEL_PATH = os.path.join("data", "isolation_forest_v2.joblib")
+MODEL_PATH = os.path.join(RESULTS_ROOT, "model", "isolation_forest.joblib")
 
 # chart colours (categorical slots 1-4 of the default validated palette)
 C_IF, C_CPU, C_Z, C_4 = "#2a78d6", "#eb6834", "#1baf7a", "#eda100"
@@ -91,7 +93,7 @@ def add_features(run):
 
 def load(path):
     if not os.path.exists(path):
-        sys.exit(f"{path} not found. Make it with export_runs.py (or simulate_runs.py for practice).")
+        sys.exit(f"{path} not found. Make it with export_runs.py (or old/simulate_runs.py for practice).")
     df = pd.read_csv(path)
     if "in_run" in df:
         df = df[df["in_run"] == 1]
@@ -373,6 +375,16 @@ def data_summary(df):
                                         ("attack rows", lambda r: str(r["attack_rows"]))])
 
 
+def write_predictions(df, feats, flag, score, path):
+    """One row per snapshot: the 7 inputs, the true label and what the model said (seed 0 model)."""
+    out = df[["timestamp", "run"] + feats].copy()
+    out.insert(0, "time_utc", pd.to_datetime(df["timestamp"], unit="s").dt.strftime("%Y-%m-%d %H:%M:%S"))
+    out["actual"] = np.where(df["label"] == 1, "attack", "normal")
+    out["model_says"] = np.where(np.asarray(flag, dtype=bool), "attack", "normal")
+    out["oddness_score"] = np.round(score, 4)
+    out.to_csv(path, index=False)
+
+
 def is_synthetic(df):
     return "synthetic" in df and bool(df["synthetic"].fillna(0).astype(int).any())
 
@@ -434,7 +446,7 @@ def tuning(args):
 
     rep = ["# Validation report (steps 1-5)\n"]
     if synthetic:
-        rep.append("> **SYNTHETIC practice data from simulate_runs.py. These numbers are not results.**\n")
+        rep.append("> **SYNTHETIC practice data from old/simulate_runs.py. These numbers are not results.**\n")
     rep += [f"Data: `{args.data}`, rows inside runs only, one row per {df['step_s'].median():.0f} s. "
             f"Normal rows in the {args.grace:.0f} s after an attack are not scored.\n",
             "## Split (by whole run)\n", data_summary(df),
@@ -510,6 +522,7 @@ def final(args):
 
     if_outs = [iforest_outputs(mm, test[feats]) for mm in models]
     f_if = if_outs[0][0]
+    write_predictions(test, feats, f_if, if_outs[0][1], os.path.join(args.out, "predictions.csv"))
     run_rows = per_run(test, keep, [("Isolation Forest", if_outs)])
     pd.DataFrame(run_rows).to_csv(os.path.join(args.out, "per_run_test.csv"), index=False)
     plot_eval_figs(test, keep, [("Isolation Forest", f_if, if_outs[0][1], C_IF)], "test_", args.out, synthetic)
@@ -529,7 +542,7 @@ def final(args):
     std_txt = ", ".join(f"{k} ±{if_std[k]:.3f}" for k in ("precision", "recall", "f1", "fpr"))
     rep = ["# Test results (steps 6-7, evaluated once)\n"]
     if synthetic:
-        rep.append("> **SYNTHETIC practice data from simulate_runs.py. These numbers are not results.**\n")
+        rep.append("> **SYNTHETIC practice data from old/simulate_runs.py. These numbers are not results.**\n")
     rep += [f"Settings fixed on validation ({sel['chosen_on']}): features {sel['features']} "
             f"({', '.join(feats)}), contamination {sel['contamination']:g}, grace {sel['grace_s']:.0f} s.\n",
             f"Isolation Forest refitted on {len(fit_rows)} normal rows: {', '.join(sorted(fit_rows['run'].unique()))}.\n",
@@ -560,8 +573,8 @@ def final(args):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--data", default=os.path.join("data", "dataset.csv"))
-    p.add_argument("--out", default="results")
+    p.add_argument("--data", default=os.path.join(RESULTS_ROOT, "2_model_input", "dataset.csv"))
+    p.add_argument("--out", default=os.path.join(RESULTS_ROOT, "3_model_output"))
     p.add_argument("--features", default=DEFAULT_FEATURES, choices=list(FEATURE_SETS))
     p.add_argument("--grace", type=float, default=60, help="seconds after an attack not scored as false alarms")
     p.add_argument("--final", action="store_true", help="steps 6-7: refit and evaluate on test ONCE")

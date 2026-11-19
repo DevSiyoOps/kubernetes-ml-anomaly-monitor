@@ -8,9 +8,9 @@
   python3 run_scenarios.py run attack_yoyo --suffix _r2 # a repeat, saved as attack_yoyo_r2
 
 For every run this writes
-  data/runs/<run>/labels.csv   one row per load segment: phase, kind, label, event_id, start, end,
+  1_prometheus_metrics/raw_runs/<run>/labels.csv   one row per load segment: phase, kind, label, event_id, start, end,
                                workers, est_rps (start/end are Unix seconds in the cluster's clock)
-  data/runs/<run>/meta.json    run window, scenario, scale, clock offset, HPA settings, app image
+  1_prometheus_metrics/raw_runs/<run>/meta.json    run window, scenario, scale, clock offset, HPA settings, app image
 
 How the load is made: before the run starts, one busybox pod per load segment is created. Each pod
 waits for its exact start time, runs N parallel wget loops against http://hpa-app/work?ms=M until
@@ -37,7 +37,9 @@ NS = os.getenv("NS", "default")
 HPA = os.getenv("HPA", "hpa-app")
 TARGET_URL = os.getenv("TARGET_URL", "http://hpa-app/work")
 IMAGE = "busybox:1.28"
-RUNS_DIR = os.path.join("data", "runs")
+# where a run set lives; the finished 2.5-hour set is in 2.5_hour_run_results/
+RESULTS_ROOT = os.getenv("RESULTS_ROOT", "7.5_hour_run_results")
+RUNS_DIR = os.path.join(RESULTS_ROOT, "1_prometheus_metrics", "raw_runs")
 LEAD_S = 45          # time between creating the pods and the first start, so every pod is Running
 SETTLE_HOLD_S = 30   # the HPA must stay at its minimum this long before a run starts
 REQ_OVERHEAD_S = 0.01  # rough per-request cost of wget + network, used only for est_rps

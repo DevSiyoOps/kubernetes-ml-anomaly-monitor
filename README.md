@@ -1,75 +1,62 @@
-# Kubernetes HPA Monitoring and Anomaly Detection
+# Kubernetes HPA Anomaly Detection
 
-This project collects Kubernetes Horizontal Pod Autoscaler (HPA) metrics from Prometheus, stores them in CSV files, visualizes the trends, and trains an unsupervised anomaly-detection model to identify unusual scaling behavior.
+When the Kubernetes autoscaler (HPA) adds pods, was it real traffic or an attack?
+An Isolation Forest learns what normal cluster behaviour looks like from Prometheus metrics and
+flags snapshots that do not fit.
 
-The work is focused on monitoring a custom `hpa-app` deployment in a local Kubernetes environment to detect abnormal autoscaling events (such as malicious load spikes) by analyzing CPU utilization, request rates, and replica counts over time.
-
-## Project Purpose
-
-This repository contains a complete end-to-end AIOps pipeline for:
-- Deploying a target application and Prometheus ServiceMonitor.
-- Exporting live Prometheus telemetry into structured datasets.
-- Training a machine-learning Isolation Forest model offline.
-- Running a live inference watchdog to trigger real-time terminal alerts.
-
-## Folder Contents
+## Folders (in pipeline order)
 
 ```text
 MLproject/
-├── app/                      # Target application source code and Dockerfile
-├── k8s/                      # Kubernetes deployment and ServiceMonitor manifests
-│   └── hpa-app.yaml          
-├── export_metrics.py         # Exports Prometheus HPA metrics to CSV
-├── load_and_plot.py          # Loads a CSV and generates basic metric plots
-├── train_model.py            # Trains an Isolation Forest anomaly model
-├── live_detector.py          # Real-time inference engine and alerting watchdog
-└── data/
-    ├── run1.csv              # Initial test dataset
-    ├── anomaly_run.csv       # Historical attack dataset used for training
-    ├── isolation_forest.joblib # Saved trained model state
-    └── anomaly_results.png   # Plotted graph of detected anomalies
+├── app/                     # the Flask app: /work?ms=N burns N ms of CPU, /metrics for Prometheus
+├── k8s/hpa-app.yaml         # ServiceMonitor so Prometheus scrapes the app
+│
+├── 2.5_hour_run_results/        # the finished 2.5-hour run (7 tests, exam scored once)
+│   ├── 1_prometheus_metrics/    # STEP 1: what Prometheus recorded, one row every 15 s
+│   │   ├── 1_normal_constant_traffic.csv
+│   │   ├── 2_normal_rising_traffic.csv
+│   │   ├── 3_normal_up_down_traffic.csv
+│   │   ├── 4_attack_many_cheap_requests.csv
+│   │   ├── 5_normal_busy_bursts.csv
+│   │   ├── 6_attack_few_expensive_requests.csv
+│   │   ├── 7_attack_yoyo.csv
+│   │   └── raw_runs/            # per test: labels.csv (when each attack ran), meta.json, prometheus_log.csv
+│   ├── 2_model_input/           # STEP 2: what the model is fed
+│   │   ├── dataset.csv                  # all 7 tests together
+│   │   └── model_input_7_features.csv   # exactly the 7 numbers the model sees + the label
+│   ├── 3_model_output/          # STEP 3: what the model produced
+│   │   ├── predictions.csv      # every exam snapshot: actual vs model_says (attack/normal) + oddness score
+│   │   ├── test_metrics.csv     # final score (precision, recall, F1, false alarms, time to catch)
+│   │   ├── final_report.md      # exam results
+│   │   ├── report.md            # tuning on the practice data
+│   │   └── *.png                # timelines, confusion matrices, contamination sweep
+│   └── model/isolation_forest.joblib   # the trained model
+│
+├── 7.5_hour_run_results/        # the repeat runs go here (same layout), created on the first run
+└── old/                         # Checkpoint 1 and pilot files, kept for reference
 ```
 
-## Scripts & Workflow
+New runs go to `7.5_hour_run_results/`. To work on the finished set instead:
+`RESULTS_ROOT=2.5_hour_run_results python3 evaluate.py`
 
-### 1) Infrastructure & Load Generation
-The target application and Prometheus ServiceMonitor are deployed via `k8s/hpa-app.yaml`. A simulated attack is generated using a heavy load container to trigger the HPA scale-up.
+## Scripts
 
-### 2) `export_metrics.py`
-This script queries Prometheus for key HPA and container metrics over a 45-minute lookback window and writes them to `data/anomaly_run.csv`. 
+| Script | What it does |
+|---|---|
+| `run_scenarios.py` | Sends timed traffic (busybox pods running `wget` loops) and writes when each attack ran |
+| `export_runs.py` | Pulls the metrics from Prometheus for each test and builds `2_model_input/dataset.csv` |
+| `evaluate.py` | Splits by test (learn / practice / exam), tunes on practice, scores the exam once |
+| `plot_contamination.py` | Draws `contamination_explained.png`: the alarm line on the real training and test scores |
+| `live_detector.py` | Checks the live cluster every 15 s and prints "System Normal" or "ANOMALY DETECTED" |
 
-It extracts:
-- `replicas`
-- `desired_replicas`
-- `cpu_utilization`
-- `request_rate`
+## The 7 features
 
-*Note: It expects a port-forwarded Prometheus connection:*
-```bash
-kubectl port-forward -n monitoring svc/monitoring-kube-prometheus-prometheus 9090:9090
-```
-
-### 3) `train_model.py`
-This script trains an unsupervised `IsolationForest` model on the historical CSV metrics to detect abnormal autoscaling behavior. 
-
-It executes the following:
-- Ingests `replicas`, `cpu_utilization`, and `request_rate`.
-- Labels multidimensional anomalies.
-- Saves the trained model to `data/isolation_forest.joblib`.
-- Generates a visual proof-of-detection graph (`data/anomaly_results.png`).
-
-### 4) `live_detector.py`
-The final inference engine. This script runs continuously, loading the `.joblib` model into memory and polling Prometheus every 15 seconds. It evaluates current cluster telemetry against the trained model to print real-time "System Normal" checks or "ANOMALY DETECTED" alerts.
+pods, CPU, requests per second, CPU per request, slowness (p95 latency),
+pod changes in the last 5 min, CPU wobble in the last 5 min.
 
 ## Requirements
 
-Install the required Python packages with:
-
 ```bash
 pip3 install pandas matplotlib scikit-learn joblib requests
+kubectl port-forward -n monitoring svc/monitoring-kube-prometheus-prometheus 9090:9090
 ```
-
-## Notes
-- This project is developed as an experimental ML pipeline for Kubernetes observability.
-- The Isolation Forest model is unsupervised, making it ideal for identifying out-of-pattern system behavior without requiring pre-labeled attack data.
-- Metric queries are specifically tuned for the `hpa-app` namespace and workload selectors.

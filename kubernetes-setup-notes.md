@@ -234,7 +234,7 @@ Answers the professor's feedback: more data, no train/test leakage, request rate
 leaving out desired replicas and for the contamination value, and real accuracy numbers.
 
 Files (written 2026-10-18, tested with a fake kubectl, a fake Prometheus and synthetic data, not yet
-on the real cluster): `run_scenarios.py`, `export_runs.py`, `evaluate.py`, `simulate_runs.py`.
+on the real cluster): `run_scenarios.py`, `export_runs.py`, `evaluate.py`, `old/simulate_runs.py`.
 This replaces the old `workload.py` plan, which was never used.
 
 Before every session: Docker Desktop running, laptop set to not sleep, OneDrive paused (optional),
@@ -279,20 +279,20 @@ runs are skipped, the interrupted one starts over.
 python3 evaluate.py
 ```
 
-Read `results/report.md` (contamination sweep, feature ablation) and the plots. When
+Read `3_model_output/report.md` (contamination sweep, feature ablation) and the plots. When
 the choices are final, run the test evaluation ONCE:
 
 ```bash
 python3 evaluate.py --final
 ```
 
-It writes `results/final_report.md`, `results/test_metrics.csv` and `data/isolation_forest_v2.joblib`,
-and logs every test evaluation in `results/test_log.csv` (it warns if the test set was already used).
+It writes `3_model_output/final_report.md`, `3_model_output/test_metrics.csv` and `model/isolation_forest.joblib`,
+and logs every test evaluation in `3_model_output/test_log.csv` (it warns if the test set was already used).
 
 Practice without the cluster (synthetic data, kept in separate files and marked as synthetic):
 
 ```bash
-python3 simulate_runs.py --repeats 2
+python3 old/simulate_runs.py --repeats 2
 python3 evaluate.py --data data/dataset_sim.csv --out results_sim
 ```
 
@@ -309,7 +309,7 @@ How it works / caveats:
 - Load pods (`lg-...`, label `role=loadgen`) are created before the run and each waits for its
   exact start time, so labels are exact. Leftovers: `kubectl delete pod -l role=loadgen`.
 - Times are in the Docker VM clock (the clock Prometheus uses); the offset to the Mac clock is
-  measured each run and saved in `data/runs/<run>/meta.json` with the HPA settings and app image.
+  measured each run and saved in `1_prometheus_metrics/raw_runs/<run>/meta.json` with the HPA settings and app image.
 - CPU counts only `container="hpa-app"`. Old CPU numbers are about twice too high: do not mix old
   and new data.
 - Every metric uses a 1-minute rate window, so it reacts up to a minute after a label changes.

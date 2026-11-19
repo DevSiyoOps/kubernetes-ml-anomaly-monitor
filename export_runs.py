@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Export Prometheus metrics for each labelled run made by run_scenarios.py, one row per 15 s.
 
-  python3 export_runs.py                     # every complete run in data/runs/
+  python3 export_runs.py                     # every complete run in 1_prometheus_metrics/raw_runs/
   python3 export_runs.py attack_flood_r2     # only these runs
   python3 export_runs.py --check             # query the last 10 minutes and say what is missing
 
 Needs the Prometheus port-forward:
   kubectl port-forward -n monitoring svc/monitoring-kube-prometheus-prometheus 9090
 
-Writes data/runs/<run>/metrics.csv for each run and data/dataset.csv with all runs together.
+Writes 1_prometheus_metrics/raw_runs/<run>/prometheus_log.csv for each run and 2_model_input/dataset.csv with all runs together.
 
 Columns
   timestamp          Unix seconds (Prometheus / Docker VM clock)
@@ -39,7 +39,9 @@ import pandas as pd
 import requests
 
 PROM = os.getenv("PROM_URL", "http://localhost:9090")
-RUNS_DIR = os.path.join("data", "runs")
+# where a run set lives; the finished 2.5-hour set is in 2.5_hour_run_results/
+RESULTS_ROOT = os.getenv("RESULTS_ROOT", "7.5_hour_run_results")
+RUNS_DIR = os.path.join(RESULTS_ROOT, "1_prometheus_metrics", "raw_runs")
 PRE_ROLL_S = 60
 
 POD = 'namespace="default", pod=~"hpa-app-.*"'
@@ -139,7 +141,7 @@ def export_run(run_dir, step):
     df.insert(df.columns.get_loc("phase"), "scenario", meta["scenario"])
     df.insert(df.columns.get_loc("scenario"), "run", meta["run"])
     df["synthetic"] = int(bool(meta.get("synthetic", False)))
-    df.to_csv(os.path.join(run_dir, "metrics.csv"), index=False)
+    df.to_csv(os.path.join(run_dir, "prometheus_log.csv"), index=False)
     return df
 
 
@@ -173,8 +175,8 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("runs", nargs="*", help="run names (default: all complete runs)")
     p.add_argument("--runs-dir", default=RUNS_DIR)
-    p.add_argument("--out", default=os.path.join("data", "dataset.csv"))
-    p.add_argument("--step", type=int, default=15, help="seconds between rows")
+    p.add_argument("--out", default=os.path.join(RESULTS_ROOT, "2_model_input", "dataset.csv"))
+    p.add_argument("--step", type=int, default=5, help="seconds between rows")
     p.add_argument("--check", action="store_true", help="only test the queries on the last 10 minutes")
     args = p.parse_args()
 

@@ -5,7 +5,7 @@ import pandas as pd
 from datetime import datetime
 
 PROMETHEUS_URL = "http://localhost:9090/api/v1/query"
-MODEL_PATH = "data/isolation_forest.joblib"
+MODEL_PATH = "old/data/isolation_forest.joblib"  # Checkpoint 1 model (3 features)
 
 print(f"Loading trained model from {MODEL_PATH}...")
 model = joblib.load(MODEL_PATH)
